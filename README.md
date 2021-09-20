@@ -2,16 +2,36 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
-#include <bits/stdc++.h>
+#include <string>
+#include <sstream>
 #include <fstream>
 using namespace std;
 
+// strcuture to store file data
 class cust{
-  public: 
+  public:
     string id;
     float cols[2];
 };
 
+// sorting algorithms
+struct sort_balance{
+    inline bool operator()(const cust& a, const cust& b){
+        return a.cols[0] < b.cols[0];
+    }
+};
+struct sort_purchases{
+    inline bool operator()(const cust& a, const cust& b){
+        return a.cols[1] < b.cols[1];
+    }
+};
+struct sort_ids{
+    inline bool operator()(const cust& a, const cust& b){
+        return a.id < b.id;
+    }
+};
+
+// binning by mean function
 void bin_by_mean(vector<cust>& data, int c){
   int i, j;
   float avg;
@@ -28,17 +48,32 @@ void bin_by_mean(vector<cust>& data, int c){
   }
 }
 
+// binning by mean function
+void bin_by_boundaries(vector<cust>& data, int c){
+  int i, j, k, mid;
+  for(i=0; i<100;){
+      k = i;
+      j = i+5>99?99:i+5;
+      mid = k + (j-k)/2;
+      while(i<=j){
+          if(i<mid) data[i].cols[c] = data[k].cols[c];
+          else data[i].cols[c] = data[j].cols[c];
+          i++;
+      }
+  }
+}
+
 // data extraction
 vector<cust> read_records(){
   fstream fin;
   int i=0, j;
   vector<cust> data;
   cust t;
-  fin.open("data.csv", ios::in);
+  fin.open("raw_data.csv", ios::in);
   vector<string> row;
   string word, temp;
   
-  // header 
+  // getting rid of the header row
   getline(fin, temp);
 
   while (fin >> temp) {
@@ -47,6 +82,9 @@ vector<cust> read_records(){
       row.clear();
       stringstream s(temp);
       while (getline(s, word, ',')) {
+          // handling the empty NULL values.
+          if(word=="NULL") word = "-1";
+          
           if(j==0) t.id = word;
           if(j==1) t.cols[0] = stof(word);
           if(j==3) t.cols[1] = stof(word);
@@ -59,26 +97,42 @@ vector<cust> read_records(){
   return data;
 }
 
-int main(){
-  
-  // extract data
-  vector<cust> data = read_records();
-  
-  // sort on basis of balance.
-  sort(data.begin(), data.end(), [](cust a, cust b){
-    return a.cols[0] < b.cols[0];
-  });
+void print(vector<cust>& data){
+    sort(data.begin(), data.end(), sort_ids());
+    for(int i=0; i<100; i++){
+      cout << data[i].id << " " << data[i].cols[0] << " " << data[i].cols[1] << endl;
+    }
+}
 
-  bin_by_mean(data,0);
-  // sort on basis of balance.
-  sort(data.begin(), data.end(), [](cust a, cust b){
-    return a.cols[1] < b.cols[1];
-  });
-  bin_by_mean(data,1);
-  
-  for(int i=0; i<100; i++){
-    cout << data[i].id << " " << data[i].cols[0] << " " << data[i].cols[1] << endl;
-  }
-  return 0;
+int main(){
+    // extract data
+    vector<cust> data = read_records();
+    vector<cust> data_mean = data;
+
+   // sort on basis of balance.
+   sort(data_mean.begin(), data_mean.end(), sort_balance());
+   bin_by_mean(data_mean,0);
+
+   // sort on basis of purchases.
+     sort(data_mean.begin(), data_mean.end(), sort_purchases());
+     bin_by_mean(data_mean,1);
+
+   // printing after binning using mean
+   cout << "\n\nResult after binning by mean: \n\n";
+   print(data_mean);
+
+   // sort on basis of balance.
+   sort(data.begin(), data.end(), sort_balance());
+   bin_by_boundaries(data,0);
+
+   // sort on basis of purchases.
+   sort(data.begin(), data.end(), sort_purchases());
+   bin_by_boundaries(data,1);
+
+   // printing after binning using boundaries
+   cout << "\n\nResult after binning by boundaries: \n\n";
+   print(data);
+    
+    return 0;
 }
 ```
