@@ -1,51 +1,58 @@
 ```
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <pthread.h>
-#define SEATS_MAX 10
+#include <unistd.h>
 
-pthread_mutex_t mutex_seats = PTHREAD_MUTEX_INITIALIZER;
-int waiting = 0;
 
-void* barber();
-void* customer();
+void *philoshoper();
 
-int main(){
-    pthread_t thread1,thread2;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+bool chopsticks[5] = {false,false,false,false,false};
 
-    int stat1 = pthread_create(&thread1, NULL, &barber, NULL);
-	int stat2 = pthread_create(&thread1, NULL, &customer, NULL);
+int main() {
+    pthread_t threads[5];
+    int ids[5] = {1,2,3,4,5};
 
-	pthread_join( thread1, NULL);
-   	pthread_join( thread2, NULL);
+    for(int i=0; i<5; i++) {
+        int t = pthread_create(&threads[i], NULL, philoshoper, (void*) &ids[i]);
+    }
 
-   	return 0;
+    for(int i=0; i<5; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    return 0;
 }
 
-void *barber(){
-	while(1){
-		// sleep if no customers
-		if(waiting==0) continue;
-		// enters critical section
-		pthread_mutex_lock(&mutex_seats);
-		// cut hair
-		waiting = waiting-1;
-		// exit critical section
-		pthread_mutex_unlock(&mutex_seats);
-	}
+void *philoshoper(void *_id) {
+    int id = *(int*) _id;
+    while(1) {
+        // wait till chopsticks are free
+        while(chopsticks[id]==true || chopsticks[(id+1)%5]==true);
+        // start eating
+        pthread_mutex_lock(&mutex);
+        chopsticks[id] = chopsticks[(id+1)%5] = true;
+        pthread_mutex_unlock(&mutex);
+        sleep(2);
+
+        printf("Philosopher %d is eating.\n", id);
+        // stop eating and start thinking
+        pthread_mutex_lock(&mutex);
+        chopsticks[id] = chopsticks[(id+1)%5] = false;
+        pthread_mutex_unlock(&mutex);
+        printf("Philosopher %d is thinking.\n", id);
+        sleep(5);
+    }
 }
 
-void* customer(){
-	while(1){
-		// longer than max => leave
-		if(waiting==SEATS_MAX) continue;
-		// enters critical section
-		pthread_mutex_lock(&mutex_seats);
-		// cut hair
-		waiting = waiting+1;
-		// exit critical section
-		pthread_mutex_unlock(&mutex_seats);	
-	}
-}
+
+
+
+
+
+
+
 
 ```
