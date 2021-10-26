@@ -1,138 +1,72 @@
 ```
-#include <iostream>
-#include <vector>
-#include <algorithm>
-#include <string>
-#include <sstream>
-#include <fstream>
-using namespace std;
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
 
-// strcuture to store file data
-class cust{
-  public:
-    string id;
-    float cols[2];
+// structure of the item
+struct item {
+	int id;
 };
 
-// sorting algorithms
-struct sort_balance{
-    inline bool operator()(const cust& a, const cust& b){
-        return a.cols[0] < b.cols[0];
-    }
-};
-struct sort_purchases{
-    inline bool operator()(const cust& a, const cust& b){
-        return a.cols[1] < b.cols[1];
-    }
-};
-struct sort_ids{
-    inline bool operator()(const cust& a, const cust& b){
-        return a.id < b.id;
-    }
+struct storage {
+	struct item items[100];
+	int front, back;
 };
 
-// binning by mean function
-void bin_by_mean(vector<cust>& data, int c){
-  int i, j;
-  float avg;
-  for(i=0; i<100;){
-    avg = 0;
-    for(j=i; j<i+5 and j<100; j++){
-      avg += data[j].cols[c];
-    }
-    avg /= 5;
-    while(i<j){
-      data[i].cols[c] = avg;
-      i++;
-    }
-  }
-}
+// global variables
+int count = 0;
+struct storage store;
+pthread_mutex_t mutex1 = PTHREAD_MUTEX_INITIALIZER;
 
-// binning by mean function
-void bin_by_boundaries(vector<cust>& data, int c){
-  int i, j, k, mid;
-  for(i=0; i<100;){
-      k = i;
-      j = i+5>99?99:i+5;
-      mid = k + (j-k)/2;
-      while(i<=j){
-          if(i<mid) data[i].cols[c] = data[k].cols[c];
-          else data[i].cols[c] = data[j].cols[c];
-          i++;
-      }
-  }
-}
-
-// data extraction
-vector<cust> read_records(){
-  fstream fin;
-  int i=0, j;
-  vector<cust> data;
-  cust t;
-  fin.open("raw_data.csv", ios::in);
-  vector<string> row;
-  string word, temp;
-  
-  // getting rid of the header row
-  getline(fin, temp);
-
-  while (fin >> temp) {
-      j=0;
-      if(i==100) break;
-      row.clear();
-      stringstream s(temp);
-      while (getline(s, word, ',')) {
-          // handling the empty NULL values.
-          if(word=="NULL") word = "-1";
-          
-          if(j==0) t.id = word;
-          if(j==1) t.cols[0] = stof(word);
-          if(j==3) t.cols[1] = stof(word);
-          if(j==4) break;
-          j++;
-      }
-      data.push_back(t);
-      i++;
-    }
-  return data;
-}
-
-void print(vector<cust>& data){
-    sort(data.begin(), data.end(), sort_ids());
-    for(int i=0; i<100; i++){
-      cout << data[i].id << " " << data[i].cols[0] << " " << data[i].cols[1] << endl;
-    }
-}
+void *producer();
+void *consumer();
 
 int main(){
-    // extract data
-    vector<cust> data = read_records();
-    vector<cust> data_mean = data;
+	// setup store
+	store.front = store.back = 0;
+	pthread_t thread1, thread2;
 
-   // sort on basis of balance.
-   sort(data_mean.begin(), data_mean.end(), sort_balance());
-   bin_by_mean(data_mean,0);
+	// execute producer thread1 and consumer on thread2
+	int stat1 = pthread_create(&thread1, NULL, &producer, NULL);
+	int stat2 = pthread_create(&thread1, NULL, &consumer, NULL);
 
-   // sort on basis of purchases.
-     sort(data_mean.begin(), data_mean.end(), sort_purchases());
-     bin_by_mean(data_mean,1);
+	pthread_join( thread1, NULL);
+   	pthread_join( thread2, NULL);
 
-   // printing after binning using mean
-   cout << "\n\nResult after binning by mean: \n\n";
-   print(data_mean);
+   	return 0;
+}
 
-   // sort on basis of balance.
-   sort(data.begin(), data.end(), sort_balance());
-   bin_by_boundaries(data,0);
+// pointer to producer function
+void *producer() {
+	while(1) {
+		// produce a new item
+		count++;
+		struct item i; i.id = count;
 
-   // sort on basis of purchases.
-   sort(data.begin(), data.end(), sort_purchases());
-   bin_by_boundaries(data,1);
+		// store is full.
+		while((store.front+1)%100==store.back);
 
-   // printing after binning using boundaries
-   cout << "\n\nResult after binning by boundaries: \n\n";
-   print(data);
-    
-    return 0;
+		// add the new item
+		pthread_mutex_lock(&mutex1);
+		store.front = (store.front+1)%100;
+		store.items[store.front] = i;
+		printf("Produced item %d at %d\n", count, store.front);
+		pthread_mutex_unlock(&mutex1);
+	}
+}
+
+// pointer to consumer function
+void *consumer() {
+	while(1) {
+		// store is empty
+		while(store.front==store.back);
+
+		// consume an item
+		pthread_mutex_lock(&mutex1);
+		struct item i = store.items[store.back];
+		printf("Consumed item at %d\n", store.back);
+		store.back = (store.back+1)%100;
+		pthread_mutex_unlock(&mutex1);
+	}
 }
 ```
