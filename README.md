@@ -1,72 +1,69 @@
 ```
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <semaphore.h>
 #include <pthread.h>
 
-// structure of the item
-struct item {
-	int id;
-};
+void *writers();
+void *readers();
 
-struct storage {
-	struct item items[100];
-	int front, back;
-};
+sem_t rw_lock;
+sem_t count_lock;
+int r_count = 0;
 
-// global variables
-int count = 0;
-struct storage store;
-pthread_mutex_t mutex1 = PTHREAD_MUTEX_INITIALIZER;
+int main() {
+    pthread_t writer, reader[5];
 
-void *producer();
-void *consumer();
+    int w = pthread_create(&writer, NULL, writers, NULL);
+    for(int i=0; i<5; i++) {
+        int r = pthread_create(&reader[i], NULL, readers, NULL);
+    }
 
-int main(){
-	// setup store
-	store.front = store.back = 0;
-	pthread_t thread1, thread2;
+    pthread_join(writer, NULL);
+    for(int i=0; i<5; i++) {
+        int r = pthread_create(reader[i], NULL, readers, NULL);
+    }
 
-	// execute producer thread1 and consumer on thread2
-	int stat1 = pthread_create(&thread1, NULL, &producer, NULL);
-	int stat2 = pthread_create(&thread1, NULL, &consumer, NULL);
-
-	pthread_join( thread1, NULL);
-   	pthread_join( thread2, NULL);
-
-   	return 0;
+    return 0;
 }
 
-// pointer to producer function
-void *producer() {
-	while(1) {
-		// produce a new item
-		count++;
-		struct item i; i.id = count;
-
-		// store is full.
-		while((store.front+1)%100==store.back);
-
-		// add the new item
-		pthread_mutex_lock(&mutex1);
-		store.front = (store.front+1)%100;
-		store.items[store.front] = i;
-		printf("Produced item %d at %d\n", count, store.front);
-		pthread_mutex_unlock(&mutex1);
-	}
+void *writers() {
+    while(1) {
+        // request the rw_lock
+        sem_wait(&rw_lock);
+        // start writing
+        printf("Writer is writing.\n");
+        sleep(5);
+        // release the rw_lock because done writing.
+        sem_post(&rw_lock);
+    }
+    
 }
 
-// pointer to consumer function
-void *consumer() {
-	while(1) {
-		// store is empty
-		while(store.front==store.back);
+void *readers() {
+    while(1) {
+        // new reader comes in
+        sem_wait(&count_lock);
+        r_count++;
+        printf("Readers : %d\n", r_count);
+        // if first reader then wait to obtain rw_lock
+        if(r_count == 1)
+            sem_wait(&rw_lock);
+        sem_post(&count_lock);
 
-		// consume an item
-		pthread_mutex_lock(&mutex1);
-		struct item i = store.items[store.back];
-		printf("Consumed item at %d\n", store.back);
-		store.back = (store.back+1)%100;
-		pthread_mutex_unlock(&mutex1);
-	}
+        // start reading
+        printf("Reader is reading.\n");
+        sleep(2);
+        
+        // done reading
+        sem_wait(&count_lock);
+        r_count--;
+        // if all readers done then release rw_lock
+        if(r_count == 0)
+            sem_post(&rw_lock);
+        sem_post(&count_lock);
+    }
+    
 }
 ```
