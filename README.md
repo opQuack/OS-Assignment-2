@@ -1,58 +1,59 @@
 ```
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-#include <pthread.h>
+#include <semaphore.h>
+// for the sleep function
 #include <unistd.h>
+#include <pthread.h>
+#define THINKERS 5
 
-
-void *philoshoper();
-
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-bool chopsticks[5] = {false,false,false,false,false};
+sem_t hungry;
+sem_t chopsticks[5];
+void *philosopher(void *_id);
 
 int main() {
-    pthread_t threads[5];
-    int ids[5] = {1,2,3,4,5};
+    int i, ids[5] = {1,2,3,4,5};
+    pthread_t philosophers[THINKERS];
 
-    for(int i=0; i<5; i++) {
-        int t = pthread_create(&threads[i], NULL, philoshoper, (void*) &ids[i]);
+    // allows atmost 4 people to be hungry.
+    sem_init(&hungry, 0, 4);
+    // initialise chopsticks as 
+    for(i=0; i<5; i++){
+        sem_init(&chopsticks[i], 0, 1);
+    }
+    // executing the threads
+    for(i=0; i<5; i++){
+        pthread_create(&philosophers[i], NULL, philosopher, (void*)&ids[i]);
     }
 
-    for(int i=0; i<5; i++) {
-        pthread_join(threads[i], NULL);
+    for(i=0; i<5; i++){
+        pthread_join(philosophers[i], NULL);
     }
 
     return 0;
 }
 
-void *philoshoper(void *_id) {
+void *philosopher(void *_id) {
+    // obtain philosopher's id
     int id = *(int*) _id;
-    while(1) {
-        // wait till chopsticks are free
-        while(chopsticks[id]==true || chopsticks[(id+1)%5]==true);
-        // start eating
-        pthread_mutex_lock(&mutex);
-        chopsticks[id] = chopsticks[(id+1)%5] = true;
-        pthread_mutex_unlock(&mutex);
-        sleep(2);
+    while(1){
+        // check if four philosopher's already hngry.
+        sem_wait(&hungry);
+        // obtain chopsticks
+        sem_wait(&chopsticks[id]);
+        sem_wait(&chopsticks[(id+1)%5]);
 
-        printf("Philosopher %d is eating.\n", id);
-        // stop eating and start thinking
-        pthread_mutex_lock(&mutex);
-        chopsticks[id] = chopsticks[(id+1)%5] = false;
-        pthread_mutex_unlock(&mutex);
-        printf("Philosopher %d is thinking.\n", id);
+        // start eating.
+        sleep(2);
+        printf("Philosopher %d is eating...\n", id);
+
+        // done eating
+        sem_post(&chopsticks[id]);
+        sem_post(&chopsticks[(id+1)%5]);
+        sem_post(&hungry);
+        printf("Philosopher %d thinking...\n", id);
         sleep(5);
     }
+    
 }
-
-
-
-
-
-
-
-
-
 ```
