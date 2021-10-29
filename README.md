@@ -1,131 +1,135 @@
 ```
-#include <stdio.h>
-#include <stdlib.h>
-#include <pthread.h>
-#include <semaphore.h>
-#include <stdbool.h>
-#include <unistd.h>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <sstream>
+#include <algorithm>
+#include <vector>
+#include <unordered_map>
+using namespace std;
 
-#define N 5
-#define M 3
-// n processes -> m resources
+// Structure of the transaction data to be read
+class Transaction {
+  public: 
+    string id;
+    bool items[3];
+    Transaction (string _id, string _a, string _b, string _c) {
+      id = _id;
+      items[0] = _a == "1" ? true : false;
+      items[1] = _b == "1" ? true : false;
+      items[2] = _c == "1" ? true : false;
+    }
+};
+unordered_map<string, pair<int, int>> map;
+vector<string> frequent;
+int min_sup = 0;
 
-// semaphores
-sem_t access_table;
-sem_t safety_performed[N];
-sem_t perform[N];
+// function to read data
+vector<Transaction> read_data(){
+  int i;
+  string word, temp, _id, _a, _b, _c;
+  vector<Transaction> transactions;
+  fstream fin;
 
-// safety algorithm matrix
-int available[3] = {3, 3, 2};
-int max_resources[N][M] = {0};
-int needs[N][M] = {0};
-int allocations[N][M] = {0};
+  fin.open("transactions.csv", ios::in);
 
-void *process(void* _id);
-void deadlock_detect();
-bool check(int i);
+  // transactions file not found.
+  if(!fin.is_open()) {
+    cout << "Transactions file not found.\n";
+    return {};
+  }
+
+  // getting rid of the title row.
+  getline(fin, temp);
+
+  while(fin >> temp) {
+    stringstream s(temp);
+    int j = 0;
+    while (getline(s, word, ',')) {
+      if(j==0) _id = word;
+      if(j==1) _a = word;
+      if(j==2) _b = word;
+      if(j==3) _c = word;
+      j++;
+    }
+    j = 0;
+    Transaction t(_id, _a, _b, _c);
+    transactions.push_back(t);
+  }
+
+  return transactions;
+}
+
+bool isItemPresent(string str, Transaction t) {
+  for(const char& c: str) {
+    if(!t.items[c-'A']) return false;
+  }
+  return true;
+}
+
+void DICHelper(vector<Transaction>& transactions, string str, int start) {
+  int i, n = transactions.size(), j;
+  i = start%n;
+  // loop is broken only if:
+  //    1. all transactions have been visited
+  //    2. its a frequent itemset
+  for(; map[str].second < n; ){
+    // itemset exists in transaction[i]
+    if(isItemPresent(str, transactions[i])) {
+      map[str].first++;
+      // this item is frequent
+      if(map[str].first>=min_sup){
+        frequent.push_back(str);
+        j = str[str.length()-1]-'A'+1;
+        for(;j<2;j++){
+          string temp = str + (char)('A'+j);
+          DICHelper(transactions, temp, i+1);
+        }
+        break;
+      }
+    }
+    // increment the number of transactions accessed.
+    map[str].second++;
+    i = (i+1)%n;
+  }
+}
+
+void DICAlgorithm(vector<Transaction>& transactions) {
+  string cur_trans = "";
+  for(int i=0; i<3; i++) {
+    string temp = cur_trans + (char)('A'+i);
+    DICHelper(transactions, temp, 0);
+  }
+}
+
 
 int main() {
-    int i;
-    int ids[N] = {0};
-    pthread_t threads[N];
-    
-    // initialise the semaphores
-    sem_init(&access_table, 0, 1);
-    
-    // alocate ids and initialise safety performed.
-    for(i=0; i<N; i++) { 
-        ids[i] = i; 
-        sem_init(&safety_performed[i], 0, 1);
-        sem_wait(&safety_performed[i]);
-        sem_init(&perform[i], 0, 1);
-        sem_wait(&perform[i]);
-    }
-    
-    // create the processes.
-    for(i=0; i<N; i++) {
-        // processes starting to execute.
-        int t = pthread_create(&threads[i], NULL, process, (void*) &ids[i]);
-    }
+  cout << "Reading transactions...\n";
+  // Read transactions from the csv file
+  vector<Transaction> transactions = read_data();
 
-    // deadlock detection algorithm
-    deadlock_detect();
+  // Check for empty datset
+  if(transactions.size()==0) return 0;
 
-    // create the processes.
-    for(i=0; i<N; i++) { pthread_join(threads[i], NULL); }
+  // Calculate the min. support
+  min_sup = ((float)transactions.size()*0.25);
 
-    return 0;
-}
+  // calling the DIC Algorithm
+  cout << "Running DIC Algorithm...\n";
+  DICAlgorithm(transactions);
 
-void *process(void* _id) {
-    int j, id = *(int*) _id;
-    int max_resource[M], allocated[M];
+  // printing the frequent transactions.
+  ofstream output_file;
+  output_file.open("output.txt");
 
-    // get resource allocation
-    for(j=0; j<M; j++) {
-        max_resource[j] = rand()%10;
-        allocated[j] = rand()%max_resource[j];
-    }
+  cout << "Writing to output file...\n";
+  output_file << "Frequent Itemsets:\n";
+  
+  for(const string& f: frequent) {
+    output_file << f << "\t";
+  }
 
-    // one process at a time can access the table.
-    sem_wait(&access_table);
-    for(int j=0; j<M; j++) {
-        max_resources[id][j] = max_resource[j];
-        allocations[id][j] = allocated[j];
-        needs[id][j] = max_resource[j] - allocated[j];
-    }
-
-    // release access to table and allow to perform deadlock detection
-    sem_post(&access_table);
-    sem_post(&perform[id]);
-
-    // waiting for safety algorithm to allow.
-    sem_wait(&safety_performed[id]);
-    printf("Performing process %d\n", id);
-    // relieve resources
-    for(int j=0; j<M; j++) {
-        available[j] += allocations[id][j];
-    }
-}
-
-void deadlock_detect() {
-    
-    // wait for processes to be allocated before performing this
-    for(int x=0; x<N; x++)
-        sem_wait(&perform[x]);
-
-    int i, j;
-    bool finished[N] = {false};
-    bool deadlock;
-    
-    // perform all functions.
-    for(i=0; i<N; i++) {
-        deadlock = true;
-        for(j=0; j<N; j++) {
-            // check if this process qualifies
-            if(!finished[j] && check(j)){
-                // safe. Perform this function.
-                deadlock = false;
-                finished[j] = true;
-                sem_post(&safety_performed[j]);
-                sleep(3);
-            }
-        }
-        // no process qualified.
-        if(deadlock) {
-            printf("System is deadlocked.\n");
-            exit(0);
-        }
-    }
-
-}
-
-bool check(int i) {
-    // check if this process can be executed.
-    bool res = true;
-    for(int k=0; k<M; k++) {
-        if(needs[i][k] >= available[k]) { res = false; break; }
-    }
-    return res;
+  cout << "\n\n\n";
+  return 0;
 }
 ```
